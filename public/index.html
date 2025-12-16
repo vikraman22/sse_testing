@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSE Demo</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        #events { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; }
+        p { margin: 5px 0; border-bottom: 1px solid #eee; }
+    </style>
+</head>
+<body>
+    <h1>Server-Sent Events Demo</h1>
+    <div id="events"></div>
+
+    <script>
+        const eventsDiv = document.getElementById('events');
+        const eventSource = new EventSource('/events');
+
+        eventSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            const newElement = document.createElement('p');
+            newElement.textContent = `Server time: ${data.time}`;
+            eventsDiv.appendChild(newElement);
+
+            // Auto scroll to bottom
+            eventsDiv.scrollTop = eventsDiv.scrollHeight;
+        };
+
+        eventSource.onerror = function(error) {
+            console.error('EventSource failed:', error);
+            // eventSource.close(); // Don't close immediately, let it try to reconnect
+        };
+    </script>
+</body>
+</html>
