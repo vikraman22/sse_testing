@@ -3,35 +3,381 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SSE Demo</title>
+    <title>SSE Visualizer</title>
     <style>
-        body { font-family: sans-serif; padding: 20px; }
-        #events { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; }
-        p { margin: 5px 0; border-bottom: 1px solid #eee; }
+        :root {
+            --primary: #3498db;
+            --success: #2ecc71;
+            --danger: #e74c3c;
+            --dark: #2c3e50;
+            --light: #ecf0f1;
+            --bg: #f5f7fa;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--dark);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+
+        h1 { margin-bottom: 20px; color: var(--dark); }
+
+        .container {
+            display: flex;
+            width: 100%;
+            max-width: 1200px;
+            gap: 20px;
+            flex: 1;
+            min-height: 0; /* Important for scroll */
+        }
+
+        .panel {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Controls Panel */
+        .controls-panel {
+            flex: 1;
+            max-width: 350px;
+        }
+
+        .status-box {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: bold;
+            text-align: center;
+            transition: background-color 0.3s;
+        }
+        .status-connected { background-color: rgba(46, 204, 113, 0.2); color: var(--success); border: 1px solid var(--success); }
+        .status-disconnected { background-color: rgba(231, 76, 60, 0.2); color: var(--danger); border: 1px solid var(--danger); }
+
+        .control-group {
+            margin-bottom: 20px;
+            border: 1px solid #eee;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .control-group h3 { margin-top: 0; font-size: 1.1em; }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background 0.2s, transform 0.1s;
+            margin-bottom: 10px;
+        }
+
+        button:active { transform: scale(0.98); }
+
+        .btn-connect { background-color: var(--success); color: white; }
+        .btn-disconnect { background-color: var(--danger); color: white; }
+        .btn-trigger { background-color: var(--primary); color: white; }
+        .btn-trigger:hover { background-color: #2980b9; }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+
+        /* Visuals Panel */
+        .visuals-panel {
+            flex: 2;
+            position: relative;
+            background-color: #fcfcfc;
+        }
+
+        .network-diagram {
+            height: 200px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 50px;
+            position: relative;
+        }
+
+        .node {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: var(--light);
+            border: 3px solid var(--dark);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
+        }
+
+        .node-icon { font-size: 24px; margin-bottom: 5px; }
+        .node-label { font-size: 12px; font-weight: bold; }
+
+        .connection-line {
+            position: absolute;
+            top: 50%;
+            left: 90px;
+            right: 90px;
+            height: 2px;
+            background: #ddd;
+            z-index: 1;
+        }
+
+        .packet {
+            position: absolute;
+            top: 50%;
+            left: 100px; /* Start at Server */
+            width: 16px;
+            height: 16px;
+            background-color: var(--primary);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            opacity: 0;
+            z-index: 3;
+            box-shadow: 0 0 10px var(--primary);
+        }
+
+        .packet.animating {
+            animation: travel 1.5s ease-in-out forwards;
+        }
+
+        @keyframes travel {
+            0% { left: 130px; opacity: 1; }
+            90% { left: calc(100% - 130px); opacity: 1; }
+            100% { left: calc(100% - 130px); opacity: 0; transform: translate(-50%, -50%) scale(2); }
+        }
+
+        .pulse {
+            animation: pulse-animation 0.5s ease-out;
+        }
+
+        @keyframes pulse-animation {
+            0% { box-shadow: 0 0 0 0px rgba(46, 204, 113, 0.7); }
+            100% { box-shadow: 0 0 0 20px rgba(46, 204, 113, 0); }
+        }
+
+        .events-log {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            font-family: monospace;
+            background-color: #222;
+            color: #0f0;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 2px;
+            animation: fadeIn 0.3s;
+        }
+        .log-time { color: #888; font-size: 0.8em; margin-right: 10px; }
+        .log-type { color: #e67e22; font-weight: bold; margin-right: 10px; }
+        .log-heartbeat { color: #7f8c8d; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
 <body>
-    <h1>Server-Sent Events Demo</h1>
-    <div id="events"></div>
+    <h1>Server-Sent Events (SSE) Demonstration</h1>
+
+    <div class="container">
+        <!-- Left Panel: Controls -->
+        <div class="panel controls-panel">
+            <div id="statusBox" class="status-box status-disconnected">Disconnected</div>
+
+            <div class="control-group">
+                <h3>Connection</h3>
+                <button id="connectBtn" class="btn-connect" onclick="connectSSE()">Connect</button>
+                <button id="disconnectBtn" class="btn-disconnect" onclick="disconnectSSE()" disabled>Disconnect</button>
+            </div>
+
+            <div class="control-group">
+                <h3>Trigger Event (Simulate Push)</h3>
+                <p style="font-size: 0.9em; color: #666;">Enter a message and click Trigger to simulate the server pushing a notification.</p>
+                <input type="text" id="customMsg" placeholder="Hello Class!">
+                <button id="triggerBtn" class="btn-trigger" onclick="triggerEvent()">Trigger Server Event</button>
+            </div>
+
+            <div class="control-group">
+                <h3>Info</h3>
+                <ul style="padding-left: 20px; font-size: 0.9em; color: #555;">
+                    <li><strong>Heartbeat:</strong> Automatic every 5s.</li>
+                    <li><strong>Manual:</strong> Triggered by you.</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Right Panel: Visualisation -->
+        <div class="panel visuals-panel">
+            <div class="network-diagram">
+                <div class="connection-line"></div>
+
+                <div class="node" id="serverNode">
+                    <span class="node-icon">🖥️</span>
+                    <span class="node-label">SERVER</span>
+                </div>
+
+                <!-- This packet element will be reused for animation -->
+                <div id="packet" class="packet"></div>
+
+                <div class="node" id="clientNode">
+                    <span class="node-icon">💻</span>
+                    <span class="node-label">CLIENT</span>
+                </div>
+            </div>
+
+            <h3 style="margin-left: 10px;">Event Stream Log</h3>
+            <div id="log" class="events-log">
+                <div class="log-entry" style="color: #777;">Waiting for connection...</div>
+            </div>
+        </div>
+    </div>
 
     <script>
-        const eventsDiv = document.getElementById('events');
-        const eventSource = new EventSource('/events');
+        let eventSource = null;
+        const statusBox = document.getElementById('statusBox');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const triggerBtn = document.getElementById('triggerBtn');
+        const logDiv = document.getElementById('log');
+        const packet = document.getElementById('packet');
+        const clientNode = document.getElementById('clientNode');
+        const serverNode = document.getElementById('serverNode');
 
-        eventSource.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            const newElement = document.createElement('p');
-            newElement.textContent = `Server time: ${data.time}`;
-            eventsDiv.appendChild(newElement);
+        function updateStatus(connected) {
+            if (connected) {
+                statusBox.textContent = "Connected";
+                statusBox.className = "status-box status-connected";
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                triggerBtn.disabled = false;
+            } else {
+                statusBox.textContent = "Disconnected";
+                statusBox.className = "status-box status-disconnected";
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                triggerBtn.disabled = true;
+            }
+        }
 
-            // Auto scroll to bottom
-            eventsDiv.scrollTop = eventsDiv.scrollHeight;
-        };
+        function logEvent(data) {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${data.type === 'heartbeat' ? 'log-heartbeat' : ''}`;
 
-        eventSource.onerror = function(error) {
-            console.error('EventSource failed:', error);
-            // eventSource.close(); // Don't close immediately, let it try to reconnect
-        };
+            const time = new Date().toLocaleTimeString();
+            entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-type">${data.type.toUpperCase()}</span> ${JSON.stringify(data)}`;
+
+            logDiv.insertBefore(entry, logDiv.firstChild);
+
+            // Cleanup old logs
+            if (logDiv.children.length > 50) {
+                logDiv.removeChild(logDiv.lastChild);
+            }
+        }
+
+        function animatePacket() {
+            // Reset animation
+            packet.classList.remove('animating');
+            void packet.offsetWidth; // Trigger reflow
+
+            // Set color based on type (simulated here, but could pass type)
+            packet.classList.add('animating');
+
+            // Flash client node on arrival (after 1.5s animation)
+            setTimeout(() => {
+                clientNode.classList.add('pulse');
+                setTimeout(() => clientNode.classList.remove('pulse'), 500);
+            }, 1400);
+        }
+
+        function connectSSE() {
+            if (eventSource) return;
+
+            eventSource = new EventSource('/events');
+
+            eventSource.onopen = () => {
+                updateStatus(true);
+                logEvent({ type: 'system', message: 'Connection established' });
+            };
+
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                logEvent(data);
+                animatePacket();
+
+                // Flash server node when sending
+                serverNode.classList.add('pulse');
+                setTimeout(() => serverNode.classList.remove('pulse'), 300);
+            };
+
+            eventSource.onerror = (error) => {
+                console.error('SSE Error:', error);
+                logEvent({ type: 'error', message: 'Connection lost or error' });
+                disconnectSSE(); // Auto disconnect on error for demo purposes
+            };
+        }
+
+        function disconnectSSE() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+                updateStatus(false);
+                logEvent({ type: 'system', message: 'Connection closed' });
+            }
+        }
+
+        async function triggerEvent() {
+            const messageInput = document.getElementById('customMsg');
+            const message = messageInput.value || "Hello World";
+
+            try {
+                const res = await fetch('/trigger', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: message,
+                        type: 'manual'
+                    })
+                });
+
+                const result = await res.json();
+                console.log('Trigger result:', result);
+                messageInput.value = ''; // clear input
+
+            } catch (err) {
+                console.error('Failed to trigger event:', err);
+                alert('Failed to trigger event');
+            }
+        }
+
+        // Start disconnected by default
+        updateStatus(false);
     </script>
 </body>
 </html>
