@@ -66,6 +66,14 @@ app.post('/trigger', (req, res) => {
   res.json({ success: true, clientsReached: clients.length });
 });
 
+// Simulates a heavy server-side operation
+app.get('/heavy-work', (req, res) => {
+    const delay = Math.floor(Math.random() * 2000) + 1000; // 1-3 seconds delay
+    setTimeout(() => {
+        res.json({ message: 'Work completed', duration: delay });
+    }, delay);
+});
+
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
