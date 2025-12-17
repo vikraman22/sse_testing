@@ -90,6 +90,8 @@
         .btn-disconnect { background-color: var(--danger); color: white; }
         .btn-trigger { background-color: var(--primary); color: white; }
         .btn-trigger:hover { background-color: #2980b9; }
+        .btn-herd { background-color: #e67e22; color: white; }
+        .btn-herd:hover { background-color: #d35400; }
 
         input[type="text"] {
             width: 100%;
@@ -128,10 +130,33 @@
             align-items: center;
             justify-content: center;
             z-index: 2;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .node.overloaded {
+            background-color: #e74c3c;
+            border-color: #c0392b;
+            color: white;
+            box-shadow: 0 0 15px rgba(231, 76, 60, 0.6);
         }
 
         .node-icon { font-size: 24px; margin-bottom: 5px; }
         .node-label { font-size: 12px; font-weight: bold; }
+
+        .load-indicator {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: #e74c3c;
+            color: white;
+            border-radius: 12px;
+            padding: 2px 8px;
+            font-size: 12px;
+            font-weight: bold;
+            display: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
 
         .connection-line {
             position: absolute;
@@ -143,28 +168,44 @@
             z-index: 1;
         }
 
+        /* Dynamic Packet Styles */
         .packet {
             position: absolute;
             top: 50%;
-            left: 100px; /* Start at Server */
-            width: 16px;
-            height: 16px;
-            background-color: var(--primary);
+            width: 12px;
+            height: 12px;
             border-radius: 50%;
             transform: translate(-50%, -50%);
-            opacity: 0;
             z-index: 3;
+            pointer-events: none;
+        }
+
+        /* Server -> Client Packet */
+        .packet-downstream {
+            left: 130px; /* Start at Server side */
+            background-color: var(--primary);
             box-shadow: 0 0 10px var(--primary);
+            animation: travel-downstream 1.5s ease-in-out forwards;
         }
 
-        .packet.animating {
-            animation: travel 1.5s ease-in-out forwards;
+        /* Client -> Server Packet */
+        .packet-upstream {
+            right: 130px; /* Start at Client side */
+            background-color: #e67e22;
+            box-shadow: 0 0 10px #e67e22;
+            animation: travel-upstream 1.5s ease-in-out forwards;
         }
 
-        @keyframes travel {
+        @keyframes travel-downstream {
             0% { left: 130px; opacity: 1; }
             90% { left: calc(100% - 130px); opacity: 1; }
             100% { left: calc(100% - 130px); opacity: 0; transform: translate(-50%, -50%) scale(2); }
+        }
+
+        @keyframes travel-upstream {
+            0% { right: 130px; opacity: 1; }
+            90% { right: calc(100% - 130px); opacity: 1; }
+            100% { right: calc(100% - 130px); opacity: 0; transform: translate(50%, -50%) scale(2); }
         }
 
         .pulse {
@@ -196,6 +237,7 @@
         .log-time { color: #888; font-size: 0.8em; margin-right: 10px; }
         .log-type { color: #e67e22; font-weight: bold; margin-right: 10px; }
         .log-heartbeat { color: #7f8c8d; }
+        .log-herd { color: #e74c3c; font-weight: bold; }
 
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(5px); }
@@ -225,6 +267,12 @@
             </div>
 
             <div class="control-group">
+                <h3>Thundering Herd</h3>
+                <p style="font-size: 0.9em; color: #666;">Simulate 50 clients simultaneously fetching data after an update event.</p>
+                <button id="herdBtn" class="btn-herd" onclick="triggerThunderingHerd()" disabled>Simulate Thundering Herd</button>
+            </div>
+
+            <div class="control-group">
                 <h3>Info</h3>
                 <ul style="padding-left: 20px; font-size: 0.9em; color: #555;">
                     <li><strong>Heartbeat:</strong> Automatic every 5s.</li>
@@ -241,10 +289,11 @@
                 <div class="node" id="serverNode">
                     <span class="node-icon">🖥️</span>
                     <span class="node-label">SERVER</span>
+                    <div id="serverLoad" class="load-indicator">0</div>
                 </div>
 
-                <!-- This packet element will be reused for animation -->
-                <div id="packet" class="packet"></div>
+                <!-- Packets will be injected here -->
+                <div id="packetContainer"></div>
 
                 <div class="node" id="clientNode">
                     <span class="node-icon">💻</span>
@@ -265,10 +314,14 @@
         const connectBtn = document.getElementById('connectBtn');
         const disconnectBtn = document.getElementById('disconnectBtn');
         const triggerBtn = document.getElementById('triggerBtn');
+        const herdBtn = document.getElementById('herdBtn');
         const logDiv = document.getElementById('log');
-        const packet = document.getElementById('packet');
+        const packetContainer = document.getElementById('packetContainer');
         const clientNode = document.getElementById('clientNode');
         const serverNode = document.getElementById('serverNode');
+        const serverLoad = document.getElementById('serverLoad');
+
+        let pendingRequests = 0;
 
         function updateStatus(connected) {
             if (connected) {
@@ -277,18 +330,39 @@
                 connectBtn.disabled = true;
                 disconnectBtn.disabled = false;
                 triggerBtn.disabled = false;
+                herdBtn.disabled = false;
             } else {
                 statusBox.textContent = "Disconnected";
                 statusBox.className = "status-box status-disconnected";
                 connectBtn.disabled = false;
                 disconnectBtn.disabled = true;
                 triggerBtn.disabled = true;
+                herdBtn.disabled = true;
+            }
+        }
+
+        function updateServerLoad(change) {
+            pendingRequests += change;
+            if (pendingRequests < 0) pendingRequests = 0;
+
+            serverLoad.textContent = pendingRequests;
+
+            if (pendingRequests > 0) {
+                serverLoad.style.display = 'block';
+                if (pendingRequests > 10) {
+                    serverNode.classList.add('overloaded');
+                } else {
+                    serverNode.classList.remove('overloaded');
+                }
+            } else {
+                serverLoad.style.display = 'none';
+                serverNode.classList.remove('overloaded');
             }
         }
 
         function logEvent(data) {
             const entry = document.createElement('div');
-            entry.className = `log-entry ${data.type === 'heartbeat' ? 'log-heartbeat' : ''}`;
+            entry.className = `log-entry ${data.type === 'heartbeat' ? 'log-heartbeat' : ''} ${data.type === 'herd_event' ? 'log-herd' : ''}`;
 
             const time = new Date().toLocaleTimeString();
             entry.innerHTML = `<span class="log-time">[${time}]</span> <span class="log-type">${data.type.toUpperCase()}</span> ${JSON.stringify(data)}`;
@@ -301,18 +375,22 @@
             }
         }
 
-        function animatePacket() {
-            // Reset animation
-            packet.classList.remove('animating');
-            void packet.offsetWidth; // Trigger reflow
+        // direction: 'downstream' (Server->Client) or 'upstream' (Client->Server)
+        function animatePacket(direction = 'downstream') {
+            const pkt = document.createElement('div');
+            pkt.className = `packet packet-${direction}`;
+            packetContainer.appendChild(pkt);
 
-            // Set color based on type (simulated here, but could pass type)
-            packet.classList.add('animating');
-
-            // Flash client node on arrival (after 1.5s animation)
+            // Flash target node on arrival (after 1.5s animation)
             setTimeout(() => {
-                clientNode.classList.add('pulse');
-                setTimeout(() => clientNode.classList.remove('pulse'), 500);
+                const target = direction === 'downstream' ? clientNode : serverNode;
+                target.classList.add('pulse');
+                setTimeout(() => target.classList.remove('pulse'), 500);
+
+                // Remove packet element
+                if (pkt.parentNode) {
+                    pkt.parentNode.removeChild(pkt);
+                }
             }, 1400);
         }
 
@@ -329,11 +407,18 @@
             eventSource.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 logEvent(data);
-                animatePacket();
+
+                // Animate packet from Server to Client
+                animatePacket('downstream');
 
                 // Flash server node when sending
                 serverNode.classList.add('pulse');
                 setTimeout(() => serverNode.classList.remove('pulse'), 300);
+
+                // Handle Herd Event
+                if (data.type === 'herd_event') {
+                    executeThunderingHerd();
+                }
             };
 
             eventSource.onerror = (error) => {
@@ -355,24 +440,58 @@
         async function triggerEvent() {
             const messageInput = document.getElementById('customMsg');
             const message = messageInput.value || "Hello World";
+            sendTrigger(message, 'manual');
+            messageInput.value = '';
+        }
 
+        async function triggerThunderingHerd() {
+            sendTrigger("Critical Update: All clients must refresh!", 'herd_event');
+        }
+
+        async function sendTrigger(message, type) {
             try {
                 const res = await fetch('/trigger', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         message: message,
-                        type: 'manual'
+                        type: type
                     })
                 });
-
                 const result = await res.json();
                 console.log('Trigger result:', result);
-                messageInput.value = ''; // clear input
-
             } catch (err) {
                 console.error('Failed to trigger event:', err);
                 alert('Failed to trigger event');
+            }
+        }
+
+        function executeThunderingHerd() {
+            const NUM_CLIENTS = 50;
+            console.log(`Executing Thundering Herd with ${NUM_CLIENTS} virtual clients...`);
+
+            for (let i = 0; i < NUM_CLIENTS; i++) {
+                // Stagger requests slightly to look more realistic/chaotic
+                setTimeout(() => {
+                    simulateClientRequest(i);
+                }, i * 50); // 50ms stagger
+            }
+        }
+
+        async function simulateClientRequest(id) {
+            updateServerLoad(1);
+            animatePacket('upstream');
+
+            try {
+                const res = await fetch('/heavy-work');
+                const data = await res.json();
+                // When request returns (packet would come back ideally, but we track load)
+                // We could animate a downstream packet here too for response
+                animatePacket('downstream');
+            } catch (err) {
+                console.error(`Client ${id} failed:`, err);
+            } finally {
+                updateServerLoad(-1);
             }
         }
 
